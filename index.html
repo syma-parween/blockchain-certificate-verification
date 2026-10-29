@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Blockchain Certificate Verification</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f172a, #1e3a8a);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 520px;
+            background: white;
+            padding: 35px;
+            border-radius: 18px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #1e3a8a;
+            font-size: 27px;
+            margin-bottom: 12px;
+        }
+
+        .description {
+            text-align: center;
+            color: #64748b;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .wallet-section {
+            background: #eff6ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        #walletStatus {
+            color: #475569;
+            font-size: 14px;
+            margin-bottom: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        label {
+            display: block;
+            color: #334155;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        input {
+            width: 100%;
+            padding: 13px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 18px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #2563eb;
+        }
+
+        button {
+            width: 100%;
+            padding: 13px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .verify-button {
+            margin-bottom: 12px;
+        }
+
+        .connect-button {
+            background: #0f172a;
+        }
+
+        .connect-button:hover {
+            background: #334155;
+        }
+
+        #result {
+            display: none;
+            margin-top: 22px;
+            padding: 18px;
+            border-radius: 10px;
+            line-height: 1.8;
+            overflow-wrap: anywhere;
+        }
+
+        .success {
+            display: block !important;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .error {
+            display: block !important;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .notice {
+            font-size: 12px;
+            color: #64748b;
+            text-align: center;
+            margin-top: 22px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <div class="icon">🎓</div>
+
+        <h1>Certificate Verification</h1>
+
+        <p class="description">
+            Verify certificate authenticity using blockchain technology.
+        </p>
+
+        <div class="wallet-section">
+
+            <p id="walletStatus">MetaMask is not connected.</p>
+
+            <button class="connect-button" id="connectWallet">
+                Connect MetaMask
+            </button>
+
+        </div>
+
+        <form id="verificationForm">
+
+            <label for="certificateId">Certificate ID</label>
+
+            <input
+                type="text"
+                id="certificateId"
+                placeholder="Example: CERT001"
+                required
+            >
+
+            <button class="verify-button" id="verifyButton" type="submit">
+                Verify Certificate
+            </button>
+
+        </form>
+
+        <div id="result"></div>
+
+        <p class="notice">
+            Powered by Blockchain Technology<br>
+            Certificate information is retrieved from the deployed smart contract.
+        </p>
+
+    </div>
+
+    
+    <script>
+        /*
+         * IMPORTANT:
+         * Replace these placeholders with the contract address and ABI
+         * from your deployment on Ganache.
+         *
+         * The address from Remix VM will not work on Ganache.
+         */
+
+        const CONTRACT_ADDRESS = "0x42472698044147b335c9Ab68446d2ae6703bf7C4";
+
+        const CONTRACT_ABI = [
+            {
+                "inputs": [
+                    {
+                        "internalType": "string",
+                        "name": "certificateId",
+                        "type": "string"
+                    }
+                ],
+                "name": "verifyCertificate",
+                "outputs": [
+                    {
+                        "internalType": "string",
+                        "name": "studentName",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "course",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "exists",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+
+        let provider;
+        let contract;
+        let connectedAccount;
+
+        const walletStatus = document.getElementById("walletStatus");
+        const connectButton = document.getElementById("connectWallet");
+        const verifyButton = document.getElementById("verifyButton");
+        const result = document.getElementById("result");
+
+        function showResult(message, type) {
+            result.className = type;
+            result.textContent = "";
+            result.style.display = "block";
+
+            if (typeof message === "string") {
+                result.textContent = message;
+            } else {
+                result.appendChild(message);
+            }
+        }
+
+        function addResultLine(parent, label, value) {
+            const line = document.createElement("p");
+            const strong = document.createElement("strong");
+
+            strong.textContent = label + ": ";
+            line.appendChild(strong);
+            line.appendChild(document.createTextNode(value));
+
+            parent.appendChild(line);
+        }
+
+        async function connectWallet() {
+            result.style.display = "none";
+
+            if (!window.ethereum) {
+                showResult(
+                    "MetaMask is not installed. Please install or enable the MetaMask extension.",
+                    "error"
+                );
+                return;
+            }
+
+            try {
+                connectButton.disabled = true;
+                connectButton.textContent = "Connecting...";
+
+                const accounts = await window.ethereum.request({
+                    method: "eth_requestAccounts"
+                });
+
+                if (!accounts.length) {
+                    throw new Error("No wallet account was selected.");
+                }
+
+                provider = new ethers.BrowserProvider(window.ethereum);
+
+                connectedAccount = accounts[0];
+
+                const network = await provider.getNetwork();
+
+                const expectedAddress = ethers.isAddress(CONTRACT_ADDRESS);
+
+                if (!expectedAddress) {
+                    walletStatus.textContent =
+                        "Wallet connected. Add your Ganache contract address in the code.";
+
+                    showResult(
+                        "MetaMask connected successfully, but the contract address has not been configured yet.",
+                        "error"
+                    );
+
+                    return;
+                }
+
+                contract = new ethers.Contract(
+                    CONTRACT_ADDRESS,
+                    CONTRACT_ABI,
+                    provider
+                );
+
+                walletStatus.textContent =
+                    "Connected: " +
+                    connectedAccount.slice(0, 6) +
+                    "..." +
+                    connectedAccount.slice(-4) +
+                    " | Chain ID: " +
+                    network.chainId;
+
+                connectButton.textContent = "Wallet Connected";
+
+            } catch (error) {
+                showResult(
+                    error.shortMessage || error.message || "Wallet connection failed.",
+                    "error"
+                );
+            } finally {
+                connectButton.disabled = false;
+
+                if (!connectedAccount) {
+                    connectButton.textContent = "Connect MetaMask";
+                }
+            }
+        }
+
+        async function verifyCertificate(event) {
+            event.preventDefault();
+
+            const certificateId = document
+                .getElementById("certificateId")
+                .value
+                .trim();
+
+            result.style.display = "none";
+
+            if (!certificateId) {
+                showResult("Please enter a certificate ID.", "error");
+                return;
+            }
+
+            if (!window.ethereum) {
+                showResult("Please install MetaMask first.", "error");
+                return;
+            }
+
+            if (!ethers.isAddress(CONTRACT_ADDRESS)) {
+                showResult(
+                    "Contract address is missing. Deploy the contract to Ganache and add its address to the code.",
+                    "error"
+                );
+                return;
+            }
+
+            try {
+                verifyButton.disabled = true;
+                verifyButton.textContent = "Verifying...";
+
+                if (!provider) {
+                    provider = new ethers.BrowserProvider(window.ethereum);
+                }
+
+                const network = await provider.getNetwork();
+
+                contract = new ethers.Contract(
+                    CONTRACT_ADDRESS,
+                    CONTRACT_ABI,
+                    provider
+                );
+
+                const certificate = await contract.verifyCertificate(
+                    certificateId
+                );
+
+                const studentName = certificate[0];
+                const course = certificate[1];
+                const exists = certificate[2];
+
+                if (!exists) {
+                    showResult(
+                        "Certificate not found. This certificate ID is not registered on the connected blockchain.",
+                        "error"
+                    );
+                    return;
+                }
+
+                const card = document.createElement("div");
+
+                const heading = document.createElement("h3");
+                heading.textContent = "Certificate Verified!";
+                card.appendChild(heading);
+
+                addResultLine(card, "Certificate ID", certificateId);
+                addResultLine(card, "Student Name", studentName);
+                addResultLine(card, "Course", course);
+                addResultLine(card, "Blockchain Chain ID", network.chainId.toString());
+
+                showResult(card, "success");
+
+            } catch (error) {
+                showResult(
+                    error.shortMessage ||
+                    error.reason ||
+                    error.message ||
+                    "Verification failed. Check the network and contract address.",
+                    "error"
+                );
+            } finally {
+                verifyButton.disabled = false;
+                verifyButton.textContent = "Verify Certificate";
+            }
+        }
+
+        connectButton.addEventListener("click", connectWallet);
+
+        document.getElementById("verificationForm").addEventListener(
+            "submit",
+            verifyCertificate
+        );
+
+        if (window.ethereum) {
+            window.ethereum.on("accountsChanged", function(accounts) {
+                connectedAccount = accounts.length ? accounts[0] : null;
+                provider = null;
+                contract = null;
+
+                walletStatus.textContent = connectedAccount
+                    ? "Wallet account changed. Reconnect MetaMask."
+                    : "MetaMask is disconnected.";
+
+                connectButton.textContent = "Connect MetaMask";
+            });
+
+            window.ethereum.on("chainChanged", function() {
+                provider = null;
+                contract = null;
+                connectedAccount = null;
+
+                walletStatus.textContent =
+                    "Network changed. Please reconnect MetaMask.";
+
+                connectButton.textContent = "Connect MetaMask";
+            });
+        }
+    </script>
+
+</body>
+</html>
